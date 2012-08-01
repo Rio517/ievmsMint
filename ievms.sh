@@ -6,6 +6,8 @@ set -o errtrace
 set -o errexit
 set -o pipefail
 
+curl_opts=${CURL_OPTS:-""}
+
 log()  { printf "$*\n" ; return $? ;  }
 
 fail() { log "\nERROR: $*\n" ; exit 1 ; }
@@ -46,13 +48,10 @@ check_virtualbox() {
         url="http://download.virtualbox.org/virtualbox/${short_version}/Oracle_VM_VirtualBox_Extension_Pack-${ext_version}.vbox-extpack"
         archive="Oracle_VM_VirtualBox_Extension_Pack-${ext_version}.vbox-extpack"
 
-        if [[ ! -f "${archive}" ]]
+        log "Downloading Oracle VM VirtualBox Extension Pack from ${url} to ${ievms_home}/${archive}"
+        if ! curl ${curl_opts} -C - -L "${url}" -o "${archive}"
         then
-            log "Downloading Oracle VM VirtualBox Extension Pack from ${url} to ${ievms_home}/${archive}"
-            if ! curl -L "${url}" -o "${archive}"
-            then
-                fail "Failed to download ${url} to ${ievms_home}/${archive} using 'curl', error code ($?)"
-            fi
+            fail "Failed to download ${url} to ${ievms_home}/${archive} using 'curl', error code ($?)"
         fi
 
         log "Installing Oracle VM VirtualBox Extension Pack from ${ievms_home}/${archive}"
@@ -75,7 +74,7 @@ download_unrar() {
     archive="rar.tar.gz"
 
     log "Downloading unrar from ${url} to ${ievms_home}/${archive}"
-    if ! curl -L "${url}" -o "${archive}"
+    if ! curl ${curl_opts} -C - -L "${url}" -o "${archive}"
     then
         fail "Failed to download ${url} to ${ievms_home}/${archive} using 'curl', error code ($?)"
     fi
@@ -97,26 +96,22 @@ check_unrar() {
 build_ievm() {
     case $1 in
         6) 
-            url="http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_XP_IE6.exe"
-            archive="Windows_XP_IE6.exe"
+            urls="http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_XP_IE6.exe"
             vhd="Windows XP.vhd"
             vm_type="WindowsXP"
             ;;
         7) 
-            url="http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_Vista_IE7.part0{1.exe,2.rar,3.rar,4.rar,5.rar,6.rar}"
-            archive="Windows_Vista_IE7.part01.exe"
+            urls=`echo http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_Vista_IE7.part0{1.exe,2.rar,3.rar,4.rar,5.rar,6.rar}`
             vhd="Windows Vista.vhd"
             vm_type="WindowsVista"
             ;;
         8) 
-            url="http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_7_IE8.part0{1.exe,2.rar,3.rar,4.rar}"
-            archive="Windows_7_IE8.part01.exe"
+            urls=`echo http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_7_IE8.part0{1.exe,2.rar,3.rar,4.rar}`
             vhd="Win7_IE8.vhd"
             vm_type="Windows7"
             ;;
         9) 
-            url="http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_7_IE9.part0{1.exe,2.rar,3.rar,4.rar,5.rar,6.rar,7.rar}"
-            archive="Windows_7_IE9.part01.exe"
+            urls=`echo http://download.microsoft.com/download/B/7/2/B72085AE-0F04-4C6F-9182-BF1EE90F5273/Windows_7_IE9.part0{1.exe,2.rar,3.rar,4.rar,5.rar,6.rar,7.rar}`
             vhd="Windows 7.vhd"
             vm_type="Windows7"
             ;;
@@ -134,20 +129,21 @@ build_ievm() {
     if [[ ! -f "${vhd}" ]]
     then
 
-        log "Checking for downloaded VHD at ${vhd_path}/${archive}"
-        if [[ ! -f "${archive}" ]]
-        then
+        log "Checking for downloaded VHDs at ${vhd_path}/"
+        for url in $urls
+        do
+            archive=`basename $url`
             log "Downloading VHD from ${url} to ${ievms_home}/"
-            if ! curl -L -O "${url}"
+            if ! curl ${curl_opts} -C - -L -O "${url}"
             then
                 fail "Failed to download ${url} to ${vhd_path}/ using 'curl', error code ($?)"
             fi
-        fi
+        done
 
-        rm -f "${vhd_path}/*.vmc"
+        rm -f "${vhd_path}/"*.vmc
 
         log "Extracting VHD from ${vhd_path}/${archive}"
-        if ! unrar e "${archive}"
+        if ! unrar e -y "${archive}"
         then
             fail "Failed to extract ${archive} to ${vhd_path}/${vhd}," \
                 "unrar command returned error code $?"
@@ -209,7 +205,11 @@ download_driver() {
     log $2
 
     cd "${ievms_home}/drivers"
-    curl -L -O $1
+    # Currently the IE6 driver download server doesn't support resume
+    if ! curl ${curl_opts} -L -O "$1"
+    then
+        fail "Failed to download $1 to ${ievms_home}/drivers/ using 'curl', error code ($?)"
+    fi
     cd ..
 }
 
